@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doc Collab — Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet" />
+  <style>
+    :root { --primary: #2563eb; --primary-hover: #1d4ed8; --bg: #f8fafc; --card: #fff; --border: #e2e8f0; --text: #0f172a; --muted: #64748b; --success: #059669; --error: #dc2626; --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,0.08); --shadow-md: 0 4px 12px rgba(0,0,0,0.08); }
+    * { box-sizing: border-box; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--text); max-width: 640px; margin: 0 auto; padding: 1.5rem 1.25rem; min-height: 100vh; }
+    h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 0.35rem; }
+    p { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.25rem; }
+    a { color: var(--primary); text-decoration: none; font-weight: 500; }
+    a:hover { text-decoration: underline; }
+    .status { padding: 0.5rem 0.75rem; border-radius: var(--radius); margin-bottom: 0.75rem; font-size: 0.875rem; font-weight: 500; box-shadow: var(--shadow); }
+    .status.connected { background: #d1fae5; color: #065f46; }
+    .status.disconnected { background: #fee2e2; color: #991b1b; }
+    .owner-badge { font-size: 0.75rem; font-weight: 600; color: var(--primary); background: #eff6ff; padding: 0.25rem 0.5rem; border-radius: 6px; margin-left: 0.5rem; }
+    .viewer-badge { font-size: 0.75rem; font-weight: 600; color: var(--muted); background: #f1f5f9; padding: 0.25rem 0.5rem; border-radius: 6px; margin-left: 0.5rem; }
+    #docContent.view-only { background: #f8fafc; cursor: not-allowed; }
+    .presence { padding: 0.85rem 1rem; margin-bottom: 1rem; font-size: 0.875rem; background: #eff6ff; color: #1e40af; border-radius: var(--radius); border: 1px solid #bfdbfe; box-shadow: var(--shadow); }
+    .presence-header { font-weight: 600; margin-bottom: 0.35rem; }
+    .presence-list { margin: 0; padding-left: 1.25rem; list-style: none; }
+    .presence-list li { margin: 0.25rem 0; font-size: 0.9rem; display: flex; align-items: center; gap: 0.35rem; }
+    .presence-list li::before { content: '●'; color: var(--success); font-size: 0.6rem; }
+    .doc-section { margin-bottom: 1.25rem; background: var(--card); padding: 1.25rem; border-radius: var(--radius); box-shadow: var(--shadow-md); border: 1px solid var(--border); }
+    .doc-section label { display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.9rem; }
+    .doc-section .meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.35rem; }
+    #docContent { width: 100%; min-height: 160px; padding: 0.85rem; border: 1px solid var(--border); border-radius: var(--radius); font-family: inherit; font-size: 0.95rem; resize: vertical; background: var(--card); }
+    #docContent:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+    .actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; align-items: center; }
+    button { padding: 0.5rem 1rem; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 500; font-family: inherit; transition: background 0.15s; }
+    button:hover:not(:disabled) { background: var(--primary-hover); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    button.secondary { background: var(--muted); }
+    button.secondary:hover:not(:disabled) { background: #475569; }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; }
+    .save-status-bar { margin-top: 0.75rem; padding: 0.5rem 0.75rem; font-size: 0.85rem; font-weight: 500; color: var(--muted); background: #f1f5f9; border-radius: 8px; min-height: 2rem; display: flex; align-items: center; }
+    .save-status-bar.saved { color: var(--success); background: #ecfdf5; }
+    .save-status-bar.saving { color: #b45309; background: #fffbeb; }
+    .save-status-bar.error { color: var(--error); background: #fef2f2; }
+    .toast { padding: 0.6rem 1rem; margin-bottom: 0.75rem; font-size: 0.875rem; border-radius: var(--radius); box-shadow: var(--shadow); }
+    .toast:not(.error) { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .toast.error { background: #fee2e2; color: var(--error); border: 1px solid #fca5a5; }
+    .history-panel { margin-top: 1rem; padding: 1rem; background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
+    .history-panel h3 { margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 600; }
+    .history-panel ul { margin: 0; padding-left: 0; font-size: 0.85rem; color: var(--muted); max-height: 280px; overflow-y: auto; list-style: none; }
+    .history-panel li { margin: 0.3rem 0; }
+    .history-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+    .history-item span { flex: 1; min-width: 0; }
+    .btn-restore { flex-shrink: 0; padding: 0.25rem 0.5rem; font-size: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; }
+    .btn-restore:hover { background: var(--primary-hover); }
+    .auth-section { margin-bottom: 1rem; padding: 0.85rem 1rem; background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); }
+    .auth-section .hint { margin: 0 0 0.5rem 0; }
+    .doc-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+    .doc-title-display { cursor: pointer; padding: 0.2rem 0.4rem; border-radius: 4px; }
+    .doc-title-display:hover { background: #f1f5f9; }
+    .doc-title-input { flex: 1; min-width: 120px; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; font-weight: 600; }
+    .btn-delete { padding: 0.35rem 0.65rem; font-size: 0.8rem; background: #dc2626; color: white; border: none; border-radius: 6px; cursor: pointer; margin-left: auto; }
+    .btn-delete:hover { background: #b91c1c; }
+  </style>
+</head>
+<body>
+  <div class="doc-header">
+    <a href="/dashboard" style="font-size: 0.9rem; color: var(--primary);">← Dashboard</a>
+    <span id="docTitle" class="doc-title-display" style="font-weight: 600; margin-left: 0.5rem;" title="Click to edit title"></span>
+    <input type="text" id="docTitleInput" class="doc-title-input" style="display: none; margin-left: 0.5rem;" placeholder="Document title" maxlength="200" />
+    <span id="ownerBadge" class="owner-badge" style="display: none;">You are the owner</span>
+    <span id="viewerBadge" class="viewer-badge" style="display: none;">View only</span>
+    <button type="button" id="btnDeleteDoc" class="btn-delete" style="display: none;">Delete document</button>
+  </div>
+  <h1>Doc Collab</h1>
+  <p>Shared document with undo, history, auto-save, and notifications.</p>
+
+  <div id="toast" class="toast" style="display: none;"></div>
+
+  <div id="status" class="status disconnected">Disconnected</div>
+  <div id="authSection" class="auth-section" style="display: none;">
+    <p id="authStatus" class="hint"></p>
+    <button type="button" id="btnSignOut" class="secondary">Sign out</button>
+  </div>
+
+  <div id="presence" class="presence" style="display: none;">
+    <div class="presence-header"><strong id="presenceCount">0</strong> here now</div>
+    <ul id="presenceList" class="presence-list"></ul>
+  </div>
+
+  <div class="doc-section">
+    <div class="meta">Version: <span id="version">—</span></div>
+    <label for="docContent">Document content</label>
+    <textarea id="docContent" placeholder="Start typing..."></textarea>
+    <div class="actions">
+      <button id="btnSave" disabled>Save</button>
+      <button id="btnUndo" class="secondary" disabled>Undo</button>
+      <button id="btnRefresh" class="secondary" disabled>Refresh</button>
+      <button id="btnHistory" class="secondary" disabled>History</button>
+    </div>
+    <div id="saveStatusBar" class="save-status-bar" role="status">—</div>
+    <button type="button" id="btnRetryLoad" class="secondary" style="display: none; margin-top: 0.5rem;">Retry load document</button>
+    <p class="hint">Auto-save runs 3s after you stop typing. Save button persists immediately.</p>
+  </div>
+
+  <div id="historyPanel" class="history-panel" style="display: none;">
+    <h3>Edit history</h3>
+    <ul id="historyList"></ul>
+  </div>
+
+  <div id="inviteSection" class="invite-section" style="display: none;">
+    <h3>Invite by email</h3>
+    <p class="hint">They will see this document in their dashboard after they sign in.</p>
+    <div class="invite-form">
+      <input type="email" id="inviteEmail" placeholder="email@example.com" />
+      <select id="inviteRole">
+        <option value="editor">Editor</option>
+        <option value="viewer">Viewer</option>
+      </select>
+      <button type="button" id="btnInvite">Invite</button>
+    </div>
+    <p id="inviteMessage" class="invite-message" style="display: none;"></p>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const origin = window.location.origin;
+    let socket;
+    let supabaseClient = null;
+
+    function connectSocket(token) {
+      if (socket) {
+        socket.removeAllListeners();
+        socket.disconnect();
+      }
+      socket = io(origin, token ? { auth: { token } } : {});
+      setupSocketListeners();
+    }
+
+    function setupSocketListeners() {
+    const statusEl = document.getElementById('status');
+    const presenceEl = document.getElementById('presence');
+    const presenceCountEl = document.getElementById('presenceCount');
+    const presenceListEl = document.getElementById('presenceList');
+    const docContent = document.getElementById('docContent');
+    const versionEl = document.getElementById('version');
+    const btnSave = document.getElementById('btnSave');
+    const btnUndo = document.getElementById('btnUndo');
+    const btnRefresh = document.getElementById('btnRefresh');
+    const btnHistory = document.getElementById('btnHistory');
+    const saveStatusBar = document.getElementById('saveStatusBar');
+    const toastEl = document.getElementById('toast');
+    const historyPanel = document.getElementById('historyPanel');
+    const historyList = document.getElementById('historyList');
+
+    let currentVersion = 0;
+    let autoSaveTimer = null;
+    let documentReady = false;
+    let lastSavedContent = null;
+    let lastSavedAt = null;
+    const AUTO_SAVE_MS = 3000;
+
+    function setDoc(content, version) {
+      docContent.value = content || '';
+      currentVersion = typeof version === 'number' ? version : 0;
+      versionEl.textContent = currentVersion;
+    }
+
+    function showToast(message, isError) {
+      toastEl.textContent = message;
+      toastEl.className = 'toast' + (isError ? ' error' : '');
+      toastEl.style.display = 'block';
+      setTimeout(() => { toastEl.style.display = 'none'; }, 4000);
+    }
+
+    function setSaveStatus(text) {
+      if (!saveStatusBar) return;
+      saveStatusBar.textContent = text || '—';
+      saveStatusBar.className = 'save-status-bar';
+      if (text === 'Saving…' || text === 'Undoing…') saveStatusBar.classList.add('saving');
+      else if (text && (text.startsWith('Saved') || text.startsWith('Last saved'))) saveStatusBar.classList.add('saved');
+      else if (text === 'Save failed' || text === 'Already saved') saveStatusBar.classList.add('error');
+    }
+
+    function setPresence(payload) {
+      if (!payload || payload.count === 0) {
+        presenceEl.style.display = 'none';
+        return;
+      }
+      presenceEl.style.display = 'block';
+      presenceCountEl.textContent = payload.count;
+      presenceListEl.innerHTML = (payload.clients || []).map((c) => {
+        const label = (c.email || 'Anonymous');
+        const isYou = c.id === socket.id;
+        return '<li>' + escapeHtml(label) + (isYou ? ' <em>(you)</em>' : '') + '</li>';
+      }).join('');
+    }
+
+    socket.on('presence:user_joined', (data) => {
+      const who = (data && data.label) || 'Someone';
+      showToast(who + ' joined the document', false);
+    });
+    socket.on('presence:user_left', (data) => {
+      const who = (data && data.label) || 'Someone';
+      showToast(who + ' left', false);
+    });
+
+    function sendEdit() {
+      if (!socket.connected) {
+        setSaveStatus('Disconnected');
+        showToast('Not connected. Reconnecting…', true);
+        return;
+      }
+      if (!documentReady) {
+        setSaveStatus('Loading document…');
+        showToast('Please wait for the document to load.', true);
+        return;
+      }
+      const content = docContent.value;
+      if (content === lastSavedContent) {
+        setSaveStatus('Already saved');
+        setTimeout(function () { setSaveStatus(lastSavedAt ? 'Last saved ' + lastSavedAt.toLocaleTimeString() : '—'); }, 1500);
+        return;
+      }
+      setSaveStatus('Saving…');
+      socket.emit('document:edit', { version: currentVersion, content });
+    }
+
+    function debouncedAutoSave() {
+      if (!documentReady || !socket.connected) return;
+      if (autoSaveTimer) clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(() => {
+        autoSaveTimer = null;
+        sendEdit();
+      }, AUTO_SAVE_MS);
+    }
+
+    socket.on('connect', () => {
+      statusEl.textContent = 'Connected (id: ' + socket.id + ')';
+      statusEl.className = 'status connected';
+      setSaveStatus('Loading document…');
+      btnRefresh.disabled = false;
+      btnHistory.disabled = false;
+      // Save/Undo enabled only after we receive 'document' (see document handler)
+    });
+
+    socket.on('disconnect', () => {
+      documentReady = false;
+      lastSavedContent = null;
+      lastSavedAt = null;
+      statusEl.textContent = 'Disconnected';
+      statusEl.className = 'status disconnected';
+      btnSave.disabled = true;
+      btnUndo.disabled = true;
+      btnRefresh.disabled = true;
+      btnHistory.disabled = true;
+      presenceEl.style.display = 'none';
+      setSaveStatus('—');
+    });
+
+    socket.on('presence', setPresence);
+
+    socket.on('document', (doc) => {
+      if (window._loadTimeoutId) { clearTimeout(window._loadTimeoutId); window._loadTimeoutId = null; }
+      documentReady = true;
+      const btnRetry = document.getElementById('btnRetryLoad');
+      if (btnRetry) btnRetry.style.display = 'none';
+      const isViewer = doc.myRole === 'viewer';
+      setDoc(doc.content, doc.version);
+      lastSavedContent = doc.content || '';
+      setSaveStatus(lastSavedAt ? 'Last saved ' + lastSavedAt.toLocaleTimeString() : '—');
+      const titleEl = document.getElementById('docTitle');
+      if (titleEl) {
+        titleEl.textContent = doc.title != null ? doc.title : 'Untitled';
+        titleEl.setAttribute('data-title', doc.title != null ? doc.title : '');
+      }
+      const ownerBadge = document.getElementById('ownerBadge');
+      if (ownerBadge) ownerBadge.style.display = doc.isOwner ? 'inline-block' : 'none';
+      const viewerBadge = document.getElementById('viewerBadge');
+      if (viewerBadge) viewerBadge.style.display = isViewer ? 'inline-block' : 'none';
+      docContent.disabled = isViewer;
+      docContent.classList.toggle('view-only', isViewer);
+      btnSave.disabled = isViewer;
+      btnSave.style.display = isViewer ? 'none' : '';
+      btnUndo.disabled = isViewer;
+      btnUndo.style.display = isViewer ? 'none' : '';
+      const inviteSection = document.getElementById('inviteSection');
+      if (inviteSection) inviteSection.style.display = doc.isOwner ? 'block' : 'none';
+      const btnDeleteDoc = document.getElementById('btnDeleteDoc');
+      if (btnDeleteDoc) btnDeleteDoc.style.display = doc.isOwner ? 'inline-block' : 'none';
+    });
+
+    socket.on('document:updated', (doc) => {
+      const fromOther = doc.updatedBy && doc.updatedBy !== socket.id;
+      setDoc(doc.content, doc.version);
+      lastSavedContent = doc.content || '';
+      lastSavedAt = new Date();
+      if (fromOther) showToast('Document updated by another user', false);
+      setSaveStatus(fromOther ? 'Saved' : 'Saved at ' + lastSavedAt.toLocaleTimeString());
+      setTimeout(function () {
+        setSaveStatus(lastSavedAt ? 'Last saved ' + lastSavedAt.toLocaleTimeString() : '—');
+      }, 2500);
+    });
+
+    socket.on('document:error', (err) => {
+      if (window._loadTimeoutId) { clearTimeout(window._loadTimeoutId); window._loadTimeoutId = null; }
+      console.warn('document:error', err);
+      const msg = err && err.message ? err.message : 'Could not load document';
+      showToast(msg, true);
+      setSaveStatus(msg);
+      documentReady = false;
+      const btnRetry = document.getElementById('btnRetryLoad');
+      if (btnRetry) btnRetry.style.display = 'inline-block';
+    });
+
+    socket.on('document:rejected', (payload) => {
+      const msg = payload.reason === 'rate_limit'
+        ? (payload.message || 'Too many edits. Please slow down.')
+        : payload.document
+          ? 'Your edit was based on an old version — document refreshed.'
+          : (payload.message || 'Your edit was rejected.');
+      showToast(msg, true);
+      if (payload.document) {
+        setDoc(payload.document.content, payload.document.version);
+        lastSavedContent = payload.document.content || '';
+      }
+      setSaveStatus('—');
+    });
+
+    socket.on('document:save-failed', (payload) => {
+      showToast(payload.message || 'Save failed. Try again.', true);
+      setSaveStatus('Save failed');
+    });
+
+    socket.on('document:undo:rejected', (payload) => {
+      showToast(payload.message || 'Nothing to undo', true);
+    });
+
+    socket.on('history', (list) => {
+      historyPanel.style.display = 'block';
+      historyList.innerHTML = (list || []).map((e) => {
+        const date = e.created_at ? new Date(e.created_at).toLocaleString() : '—';
+        const preview = (e.content || '').slice(0, 60) + ((e.content || '').length > 60 ? '…' : '');
+        return '<li class="history-item">' +
+          '<span><strong>v' + e.version + '</strong> ' + date + '<br><small>' + escapeHtml(preview) + '</small></span>' +
+          '<button type="button" class="btn-restore" data-version="' + e.version + '" title="Restore this version">Restore</button>' +
+          '</li>';
+      }).join('');
+      historyList.querySelectorAll('.btn-restore').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const version = parseInt(btn.getAttribute('data-version'), 10);
+          if (!isNaN(version)) {
+            socket.emit('document:restore', { version: version });
+            setSaveStatus('Restoring…');
+          }
+        });
+      });
+    });
+
+    socket.on('document:restore:rejected', (payload) => {
+      showToast(payload.message || 'Could not restore version', true);
+      setSaveStatus('—');
+    });
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    btnSave.addEventListener('click', () => {
+      if (!documentReady) {
+        showToast('Please wait for the document to load.', true);
+        setSaveStatus('Loading document…');
+        return;
+      }
+      setSaveStatus('Saving…');
+      sendEdit();
+    });
+
+    btnUndo.addEventListener('click', () => {
+      socket.emit('document:undo');
+      setSaveStatus('Undoing…');
+    });
+
+    btnRefresh.addEventListener('click', () => {
+      socket.emit('document:get');
+    });
+
+    btnHistory.addEventListener('click', () => {
+      socket.emit('history:get');
+    });
+
+    docContent.addEventListener('input', () => {
+      debouncedAutoSave();
+    });
+
+    const inviteSection = document.getElementById('inviteSection');
+    const inviteEmail = document.getElementById('inviteEmail');
+    const btnInvite = document.getElementById('btnInvite');
+    const inviteMessage = document.getElementById('inviteMessage');
+    if (btnInvite && inviteEmail) {
+      btnInvite.addEventListener('click', async () => {
+        const pathParts = window.location.pathname.split('/').filter(Boolean);
+        const docId = pathParts[0] === 'doc' && pathParts[1] ? pathParts[1] : null;
+        if (!docId) return;
+        const email = (inviteEmail.value || '').trim().toLowerCase();
+        if (!email) {
+          inviteMessage.textContent = 'Enter an email address.';
+          inviteMessage.className = 'invite-message error';
+          inviteMessage.style.display = 'block';
+          return;
+        }
+        const role = (document.getElementById('inviteRole') || {}).value || 'viewer';
+        let token = null;
+        try {
+          const s = localStorage.getItem('doc_collab_session');
+          if (s) { const ses = JSON.parse(s); if (ses && ses.access_token) token = ses.access_token; }
+        } catch (_) {}
+        if (!token) {
+          inviteMessage.textContent = 'Please sign in to invite.';
+          inviteMessage.className = 'invite-message error';
+          inviteMessage.style.display = 'block';
+          return;
+        }
+        inviteMessage.style.display = 'none';
+        btnInvite.disabled = true;
+        try {
+          const res = await fetch(origin + '/api/documents/' + docId + '/invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({ email, role }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            inviteMessage.textContent = data.error || 'Failed to invite';
+            inviteMessage.className = 'invite-message error';
+            inviteMessage.style.display = 'block';
+            return;
+          }
+          inviteMessage.textContent = 'Invite sent. They will see this doc when they sign in.';
+          inviteMessage.className = 'invite-message success';
+          inviteMessage.style.display = 'block';
+          inviteEmail.value = '';
+        } catch (err) {
+          inviteMessage.textContent = 'Network error. Try again.';
+          inviteMessage.className = 'invite-message error';
+          inviteMessage.style.display = 'block';
+        }
+        btnInvite.disabled = false;
+      });
+    }
+
+    const btnRetryLoad = document.getElementById('btnRetryLoad');
+    if (btnRetryLoad) {
+      btnRetryLoad.addEventListener('click', function () {
+        const pathParts = window.location.pathname.split('/').filter(Boolean);
+        const docId = pathParts[0] === 'doc' && pathParts[1] ? pathParts[1] : null;
+        if (docId && socket) {
+          setSaveStatus('Loading document…');
+          btnRetryLoad.style.display = 'none';
+          socket.emit('document:join', docId);
+        }
+      });
+    }
+
+    const docTitleEl = document.getElementById('docTitle');
+    const docTitleInput = document.getElementById('docTitleInput');
+    if (docTitleEl && docTitleInput) {
+      docTitleEl.addEventListener('click', function () {
+        if (docTitleInput.style.display === 'none') {
+          docTitleInput.value = docTitleEl.textContent || '';
+          docTitleEl.style.display = 'none';
+          docTitleInput.style.display = 'inline-block';
+          docTitleInput.focus();
+        }
+      });
+      function saveTitle() {
+        const newTitle = (docTitleInput.value || '').trim() || 'Untitled';
+        docTitleInput.style.display = 'none';
+        docTitleEl.style.display = '';
+        docTitleEl.textContent = newTitle;
+        const pathParts = window.location.pathname.split('/').filter(Boolean);
+        const docId = pathParts[0] === 'doc' && pathParts[1] ? pathParts[1] : null;
+        if (!docId || newTitle === (docTitleEl.getAttribute('data-title') || '')) return;
+        let token = null;
+        try { const s = localStorage.getItem('doc_collab_session'); if (s) { const ses = JSON.parse(s); if (ses && ses.access_token) token = ses.access_token; } } catch (_) {}
+        if (!token) return;
+        fetch(origin + '/api/documents/' + docId, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ title: newTitle }),
+        }).then(function (res) {
+          if (res.ok) docTitleEl.setAttribute('data-title', newTitle);
+        });
+      }
+      docTitleInput.addEventListener('blur', saveTitle);
+      docTitleInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); saveTitle(); } });
+    }
+
+    const btnDeleteDoc = document.getElementById('btnDeleteDoc');
+    if (btnDeleteDoc) {
+      btnDeleteDoc.addEventListener('click', async function () {
+        if (!confirm('Delete this document? This cannot be undone.')) return;
+        const pathParts = window.location.pathname.split('/').filter(Boolean);
+        const docId = pathParts[0] === 'doc' && pathParts[1] ? pathParts[1] : null;
+        if (!docId) return;
+        let token = null;
+        try { const s = localStorage.getItem('doc_collab_session'); if (s) { const ses = JSON.parse(s); if (ses && ses.access_token) token = ses.access_token; } } catch (_) {}
+        if (!token) return;
+        const res = await fetch(origin + '/api/documents/' + docId, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+        if (res.ok) window.location.href = '/dashboard';
+        else { const d = await res.json().catch(() => ({})); showToast(d.error || 'Failed to delete', true); }
+      });
+    }
+    }
+
+    // Multi-doc: get document id from URL (/doc/:id); require auth; connect socket and emit document:join(docId)
+    (async function init() {
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      const documentId = pathParts[0] === 'doc' && pathParts[1] ? pathParts[1] : null;
+      if (!documentId) {
+        window.location.replace('/dashboard');
+        return;
+      }
+
+      const authSection = document.getElementById('authSection');
+      const authStatus = document.getElementById('authStatus');
+      const btnSignOut = document.getElementById('btnSignOut');
+
+      let token = null;
+      try {
+        const sessionStr = localStorage.getItem('doc_collab_session');
+        if (sessionStr) {
+          const session = JSON.parse(sessionStr);
+          if (session && session.access_token) token = session.access_token;
+        }
+      } catch (_) {}
+
+      if (!token) {
+        window.location.replace('/login');
+        return;
+      }
+
+      const configRes = await fetch(origin + '/config');
+      const config = await configRes.json();
+      if (config.supabaseUrl && config.supabaseAnonKey) {
+        try {
+          const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+          supabaseClient = mod.createClient(config.supabaseUrl, config.supabaseAnonKey);
+          const { data: { user } } = await supabaseClient.auth.getUser(token);
+          if (user) {
+            authSection.style.display = 'block';
+            authStatus.textContent = 'Signed in as ' + (user.email || '');
+          } else {
+            localStorage.removeItem('doc_collab_session');
+            window.location.replace('/login');
+            return;
+          }
+        } catch (_) {}
+      }
+
+      connectSocket(token);
+
+      // After socket connects, join this document (server will send document + presence)
+      const onConnect = () => {
+        socket.emit('document:join', documentId);
+        window._loadTimeoutId = setTimeout(function () {
+          const s = document.getElementById('saveStatusBar');
+          const btn = document.getElementById('btnRetryLoad');
+          if (s && s.textContent === 'Loading document…') {
+            s.textContent = 'Load failed. Retry?';
+            s.className = 'save-status-bar error';
+            if (btn) btn.style.display = 'inline-block';
+          }
+        }, 8000);
+      };
+      socket.once('connect', onConnect);
+      if (socket.connected) onConnect();
+
+      if (btnSignOut) {
+        btnSignOut.onclick = () => {
+          localStorage.removeItem('doc_collab_session');
+          window.location.replace('/login');
+        };
+      }
+    })();
+  </script>
+</body>
+</html>

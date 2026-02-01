@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign up — Doc Collab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet" />
+  <style>
+    :root { --primary: #2563eb; --primary-hover: #1d4ed8; --bg: #f8fafc; --card: #fff; --border: #e2e8f0; --text: #0f172a; --muted: #64748b; --error: #dc2626; --success: #059669; --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,0.08); --shadow-md: 0 4px 12px rgba(0,0,0,0.08); }
+    * { box-sizing: border-box; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--text); max-width: 380px; margin: 0 auto; padding: 2rem 1.25rem; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.35rem; }
+    p { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .card { background: var(--card); padding: 1.75rem; border-radius: var(--radius); box-shadow: var(--shadow-md); border: 1px solid var(--border); }
+    label { display: block; font-weight: 500; margin-bottom: 0.4rem; font-size: 0.9rem; }
+    input { width: 100%; padding: 0.65rem 0.75rem; margin-bottom: 1rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; font-family: inherit; }
+    input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+    button { width: 100%; padding: 0.7rem; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; font-family: inherit; transition: background 0.15s; }
+    button:hover:not(:disabled) { background: var(--primary-hover); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error { color: var(--error); font-size: 0.9rem; margin-bottom: 1rem; }
+    .success { color: var(--success); font-size: 0.9rem; margin-bottom: 1rem; }
+    .link { margin-top: 1.25rem; text-align: center; font-size: 0.9rem; color: var(--muted); }
+    .link a { color: var(--primary); font-weight: 500; text-decoration: none; }
+    .link a:hover { text-decoration: underline; }
+    #stepOtp { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Sign up</h1>
+    <p>Create an account. We'll send an OTP to your email to verify it.</p>
+
+    <div id="error" class="error" style="display: none;"></div>
+    <div id="success" class="success" style="display: none;"></div>
+
+    <div id="stepSignup">
+      <form id="formSignup">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required placeholder="you@example.com" autocomplete="email" />
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" />
+        <button type="submit" id="btnSignup">Send OTP</button>
+      </form>
+    </div>
+
+    <div id="stepOtp">
+      <p id="otpHint">Enter the 6-digit code sent to <strong id="otpEmail"></strong></p>
+      <form id="formOtp">
+        <label for="otp">Verification code</label>
+        <input type="text" id="otp" name="otp" required maxlength="6" placeholder="000000" autocomplete="one-time-code" />
+        <label for="passwordAgain">Password (again)</label>
+        <input type="password" id="passwordAgain" name="passwordAgain" required placeholder="••••••••" />
+        <button type="submit" id="btnOtp">Verify & create account</button>
+      </form>
+    </div>
+
+    <div class="link">Already have an account? <a href="/login">Sign in</a></div>
+  </div>
+
+  <script>
+    const stepSignup = document.getElementById('stepSignup');
+    const stepOtp = document.getElementById('stepOtp');
+    const formSignup = document.getElementById('formSignup');
+    const formOtp = document.getElementById('formOtp');
+    const errorEl = document.getElementById('error');
+    const successEl = document.getElementById('success');
+    const otpEmailEl = document.getElementById('otpEmail');
+
+    let signupEmail = '';
+    let signupPassword = '';
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+      successEl.style.display = 'none';
+    }
+    function showSuccess(msg) {
+      successEl.textContent = msg;
+      successEl.style.display = 'block';
+      errorEl.style.display = 'none';
+    }
+    function hideMessages() {
+      errorEl.style.display = 'none';
+      successEl.style.display = 'none';
+    }
+
+    formSignup.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideMessages();
+      document.getElementById('btnSignup').disabled = true;
+      const email = document.getElementById('email').value.trim().toLowerCase();
+      const password = document.getElementById('password').value;
+      signupEmail = email;
+      signupPassword = password;
+
+      try {
+        const res = await fetch('/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showError(data.error || 'Failed to send OTP');
+          document.getElementById('btnSignup').disabled = false;
+          return;
+        }
+        showSuccess(data.message || 'OTP sent! Check your email.');
+        stepSignup.style.display = 'none';
+        stepOtp.style.display = 'block';
+        otpEmailEl.textContent = email;
+        document.getElementById('otp').focus();
+      } catch (err) {
+        showError('Network error. Try again.');
+      }
+      document.getElementById('btnSignup').disabled = false;
+    });
+
+    formOtp.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideMessages();
+      document.getElementById('btnOtp').disabled = true;
+      const otp = document.getElementById('otp').value.trim();
+      const passwordAgain = document.getElementById('passwordAgain').value;
+      if (passwordAgain !== signupPassword) {
+        showError('Password does not match. Enter the same password.');
+        document.getElementById('btnOtp').disabled = false;
+        return;
+      }
+
+      try {
+        const res = await fetch('/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: signupEmail, otp, password: signupPassword }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showError(data.error || 'Verification failed');
+          document.getElementById('btnOtp').disabled = false;
+          return;
+        }
+        showSuccess('Account created! Redirecting to sign in…');
+        setTimeout(() => { window.location.href = '/login'; }, 1500);
+      } catch (err) {
+        showError('Network error. Try again.');
+        document.getElementById('btnOtp').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
