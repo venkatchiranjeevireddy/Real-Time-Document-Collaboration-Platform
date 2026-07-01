@@ -1,164 +1,218 @@
 # Distributed Document Collaboration System
 
-Real-time multi-user document collaboration: shared documents, version control, roles, invites, presence, audit trail, and auto-snapshots. Built with **Node.js**, **Express**, **Socket.io**, and **Supabase**.
+**Real-time, multi-user document editing with version control, roles, invites, presence, and audit trails.**
+
+`Node.js` · `Express` · `Socket.io` · `Supabase (PostgreSQL)` · `MIT License`
 
 ---
 
-## What It Can Do — All Features
+## Overview
 
-### Core (Real-time & Persistence)
+A production-style collaborative document editor — think a lightweight Google Docs — built to demonstrate real-time synchronization, concurrency control, and multi-tenant access management at a systems level.
 
-- **Shared documents** — In-memory document state with `{ content, version }`; clients get via socket, edit via `document:edit`.
-- **Real-time sync** — Every accepted edit is broadcast to all clients in the room; everyone sees updates instantly.
-- **Multi-client handling** — Server tracks connected clients; presence shows who is online per document.
-- **Version-based concurrency** — Client sends `{ version, content }`; server accepts only if version matches current; stale edits are rejected.
-- **Mutex safety** — Per-document mutex so only one update is applied at a time; no race conditions.
-- **Supabase persistence** — Documents and edit history saved to PostgreSQL; load on startup, save on every accepted edit.
-- **Edit history in DB** — Each accepted edit is appended to `edit_history`; clients can request history via `history:get`.
-- **Undo** — Restore document to the previous version from history; broadcast to all; persisted.
-- **Client auto-save** — Debounced input (e.g. 3s); after user stops typing, client sends edit and shows "Saving…" / "Saved".
-- **Logging** — Structured logger for connect, disconnect, edits, rejects, and Supabase load/save.
+The project is organized into **10 incremental build phases**, layering authentication, document ownership, role-based permissions, invites, live presence, conflict resolution, audit logging, version history, rate limiting, and automatic snapshots on top of a core real-time sync engine.
 
-### Auth & Identity (STEP 1)
+---
 
-- **Login & signup pages** — Dedicated `/login` and `/signup`; root `/` redirects to login.
-- **OTP verification** — Sign up sends OTP via email (e.g. Gmail); verify OTP then create user in Supabase Auth.
-- **JWT session** — Sign in returns Supabase session (JWT); client stores it and sends token in socket handshake.
-- **User identity on every edit** — Server attaches `editedBy: { id, email }` to `document:updated` and to presence; audit uses userId/userEmail.
+## Table of Contents
 
-### Documents & Ownership (STEP 2)
+- [Core Capabilities](#core-capabilities)
+- [Feature Breakdown by Phase](#feature-breakdown-by-phase)
+- [Tech Stack](#tech-stack)
+- [Prerequisites](#prerequisites)
+- [Getting Started](#getting-started)
+- [API Reference](#api-reference)
+- [Project Structure](#project-structure)
+- [Documentation](#documentation)
+- [License](#license)
 
-- **Multi-document** — Create many documents; each has its own content, version, and owner.
-- **Document owner** — Creator is stored as `owner_id` in `documents`; only owner can update title, delete doc, and invite.
-- **Owner badge** — UI shows "You are the owner" (or owner email) on the document page.
-- **Editable title** — Owner can change document title (inline edit or API `PATCH /api/documents/:id`).
-- **Delete document** — Owner can delete a document (API `DELETE /api/documents/:id`; UI button on doc page and dashboard).
+---
 
-### Roles (STEP 3)
+## Core Capabilities
 
-- **Editor vs Viewer** — `document_members` table stores role per user per document; server rejects edits from viewers.
-- **Role enforcement** — Only users with role `owner` or `editor` can edit; viewers get "View only" and disabled textarea.
-- **UI badges** — "View only" for viewers; "You are the owner" or editor indication for editors.
+| Capability | Description |
+|---|---|
+| **Real-time sync** | Every accepted edit is broadcast instantly to all connected clients in a document room. |
+| **Optimistic concurrency control** | Edits carry a `{ version, content }` payload; the server accepts only matching versions and rejects stale writes. |
+| **Mutex-protected writes** | A per-document mutex serializes updates, eliminating race conditions under concurrent edits. |
+| **Durable persistence** | Documents and full edit history are stored in Supabase (PostgreSQL) and rehydrated on server start. |
+| **Undo & version restore** | Roll back to any of the last 20 saved versions, with changes broadcast and persisted. |
+| **Debounced auto-save** | Client-side input debouncing (default 3s) with live "Saving…" / "Saved" status. |
+| **Structured logging** | Centralized logging for connections, disconnections, edits, rejections, and DB I/O. |
 
-### Invites (STEP 4)
+---
 
-- **Invite by email** — Owner can invite by email and role (editor/viewer); stored in `document_invites`.
-- **Dashboard sections** — "My documents" (owned), "Shared with me" (member), "Invited" (pending invite by email).
-- **Accept on open** — When a user opens a document they were invited to, invite is accepted (added to `document_members`); they then have access by role.
-- **Invite UI** — On document page, owner can invite via email + role and see pending invites.
+## Feature Breakdown by Phase
 
-### Presence (STEP 5)
+<details>
+<summary><strong>Step 1 — Authentication & Identity</strong></summary>
 
-- **Online presence panel** — Shows list of connected users (emails) and count per document.
-- **Join/leave toasts** — "X joined" and "X left" when users connect or disconnect from the document.
+- Dedicated `/login` and `/signup` pages; root `/` redirects to `/login`.
+- Email OTP verification on signup, backed by Supabase Auth.
+- JWT-based sessions; token passed via the Socket.io handshake.
+- Every edit and presence event carries authenticated user identity (`editedBy: { id, email }`).
 
-### Conflict UX (STEP 6)
+</details>
 
-- **Stale edit message** — When server rejects an edit (version mismatch), client shows: "Your edit was based on an old version — document refreshed."
-- **Auto refresh** — Document content and version are updated to the latest so the user can edit again.
+<details>
+<summary><strong>Step 2 — Documents & Ownership</strong></summary>
 
-### Audit Trail (STEP 7)
+- Support for multiple independent documents, each with its own content, version, and owner.
+- Ownership recorded via `owner_id` on the `documents` table.
+- Owner-only actions: rename title, delete document, manage invites.
+- Ownership clearly surfaced in the UI ("You are the owner").
 
-- **In-memory audit log** — Server keeps last N (e.g. 500) edit events: docId, userId, userEmail, oldVersion, newVersion, timestamp, action (`edit` / `undo` / `restore`).
-- **GET /api/audit** — Returns recent audit entries (auth required); optional `?limit=N` and `?documentId=uuid`; filtered by document access.
+</details>
 
-### Version History & Restore (STEP 8)
+<details>
+<summary><strong>Step 3 — Roles & Permissions</strong></summary>
 
-- **Cap at 20 versions** — After each save, older `edit_history` rows are pruned so only the last 20 versions per document are kept.
-- **Restore by version** — Socket event `document:restore` with `{ version }`; server loads that version from history, restores document, broadcasts, and persists.
-- **History panel in UI** — List of versions with timestamp and a **Restore** button per version; only editors can restore.
+- `document_members` table maps `(user, document) → role`.
+- Two roles: **Editor** and **Viewer**, enforced server-side on every edit.
+- Viewers receive a read-only UI (disabled input, "View only" badge).
 
-### Rate Limit (STEP 9)
+</details>
 
-- **Max edits per second per user** — Configurable (e.g. 5); if exceeded, server emits `document:rejected` with `reason: 'rate_limit'` and message "Too many edits. Please slow down."
-- **Client feedback** — Toast shows the message; document still refreshes if server sends latest doc.
+<details>
+<summary><strong>Step 4 — Invites</strong></summary>
 
-### Auto-Snapshot (STEP 10)
+- Owners invite collaborators by email with an assigned role.
+- Dashboard organizes documents into **My Documents**, **Shared with Me**, and **Invited**.
+- Invites auto-accept when the invited user opens the document.
 
-- **Server timer** — Every X minutes (e.g. 5), server writes current state of each in-memory document to `edit_history` with `source: 'auto'`.
-- **Prune after snapshot** — Keeps last 20 versions per document including auto-snapshots.
-- **Configurable** — Interval via env `AUTO_SNAPSHOT_INTERVAL_MINUTES`.
+</details>
+
+<details>
+<summary><strong>Step 5 — Presence</strong></summary>
+
+- Live panel showing connected users and per-document online count.
+- Join/leave toast notifications in real time.
+
+</details>
+
+<details>
+<summary><strong>Step 6 — Conflict Resolution UX</strong></summary>
+
+- Stale edits (version mismatch) are rejected with a clear client message: *"Your edit was based on an old version — document refreshed."*
+- Client automatically syncs to the latest content and version.
+
+</details>
+
+<details>
+<summary><strong>Step 7 — Audit Trail</strong></summary>
+
+- Rolling in-memory log of the last 500 edit events (`edit`, `undo`, `restore`) with actor, versions, and timestamp.
+- Exposed via `GET /api/audit`, scoped to documents the requester can access.
+
+</details>
+
+<details>
+<summary><strong>Step 8 — Version History & Restore</strong></summary>
+
+- Automatic pruning to the most recent 20 versions per document.
+- `document:restore` socket event restores, broadcasts, and persists any historical version.
+- History panel in the UI with per-version restore (editor role required).
+
+</details>
+
+<details>
+<summary><strong>Step 9 — Rate Limiting</strong></summary>
+
+- Configurable per-user edit throttle (default: 5 edits/sec).
+- Over-limit edits are rejected with `reason: 'rate_limit'` and a toast: *"Too many edits. Please slow down."*
+
+</details>
+
+<details>
+<summary><strong>Step 10 — Auto-Snapshot</strong></summary>
+
+- Background timer periodically snapshots each in-memory document into `edit_history` (`source: 'auto'`).
+- Snapshot interval configurable via `AUTO_SNAPSHOT_INTERVAL_MINUTES`.
+- Snapshots respect the same 20-version retention cap.
+
+</details>
 
 ---
 
 ## Tech Stack
 
-| Layer        | Tech                    |
-|-------------|-------------------------|
-| Backend     | Node.js, Express        |
-| Real-time   | Socket.io (WebSockets) |
-| Database    | Supabase (PostgreSQL)   |
-| Auth        | Supabase Auth (OTP/JWT) |
-| Frontend    | Vanilla HTML/CSS/JS    |
+| Layer | Technology |
+|---|---|
+| **Backend** | Node.js, Express |
+| **Real-time transport** | Socket.io (WebSockets) |
+| **Database** | Supabase (PostgreSQL) |
+| **Auth** | Supabase Auth (OTP + JWT) |
+| **Frontend** | Vanilla HTML / CSS / JavaScript |
 
 ---
 
 ## Prerequisites
 
 - **Node.js** 20+
-- **Supabase** project (for persistence and auth)
-- **Gmail** (or SMTP) for OTP emails on signup
+- A **Supabase** project (persistence + auth)
+- **Gmail** or any SMTP provider (for OTP delivery on signup)
 
 ---
 
-## Installation & Setup
+## Getting Started
 
-1. **Clone and install**
+### 1. Clone and install
 
-   ```bash
-   git clone <your-repo-url>
-   cd zzz_document_collab
-   npm install
-   ```
+```bash
+git clone <your-repo-url>
+cd zzz_document_collab
+npm install
+```
 
-2. **Environment**
+### 2. Configure environment
 
-   Copy `.env.example` to `.env` and set:
+Copy `.env.example` to `.env` and populate:
 
-   - `SUPABASE_URL` — Project URL from Supabase Dashboard → Project Settings → API  
-   - `SUPABASE_ANON_KEY` — anon public key  
-   - `SUPABASE_SERVICE_ROLE_KEY` — service_role key (for creating users, server-side DB)  
-   - `EMAIL_USER`, `EMAIL_PASSWORD` — Gmail (or SMTP) for OTP on signup  
+| Variable | Required | Description |
+|---|:---:|---|
+| `SUPABASE_URL` | ✅ | Project URL — *Supabase Dashboard → Project Settings → API* |
+| `SUPABASE_ANON_KEY` | ✅ | Anon/public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Service role key (server-side user creation & DB writes) |
+| `EMAIL_USER` / `EMAIL_PASSWORD` | ✅ | SMTP credentials for OTP delivery |
+| `PORT` | – | Server port (default `3000`) |
+| `CORS_ORIGIN` | – | Allowed origin (default `*`) |
+| `MAX_EDITS_PER_SECOND` | – | Per-user rate limit (default `5`) |
+| `AUTO_SNAPSHOT_INTERVAL_MINUTES` | – | Snapshot cadence (default `5`) |
 
-   Optional:
+### 3. Apply the database schema
 
-   - `PORT` (default `3000`)  
-   - `CORS_ORIGIN` (default `*`)  
-   - `MAX_EDITS_PER_SECOND` (default `5`)  
-   - `AUTO_SNAPSHOT_INTERVAL_MINUTES` (default `5`)  
+In the Supabase SQL Editor, run:
 
-3. **Supabase schema**
+1. **`supabase-schema-multi-doc.sql`** — creates `documents`, `edit_history`, `document_members`, `document_invites`
+2. *(Optional)* **`supabase-step10-migration.sql`** — adds the `source` column to `edit_history` for auto-snapshot support
 
-   - In Supabase → SQL Editor, run **`supabase-schema-multi-doc.sql`** (creates `documents`, `edit_history`, `document_members`, `document_invites`).
-   - Optional: run **`supabase-step10-migration.sql`** to add `source` column to `edit_history` for auto-snapshots.
+Full walkthrough: **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)**
 
-   See **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** for step-by-step SQL and dashboard settings.
+### 4. Run the server
 
-4. **Run**
+```bash
+npm start
+```
 
-   ```bash
-   npm start
-   ```
-
-   Server runs at **http://localhost:3000** (or your `PORT`).
+The app is now live at **http://localhost:3000** (or your configured `PORT`).
 
 ---
 
-## Routes & API
+## API Reference
 
-| Route / API | Description |
-|------------|-------------|
-| `GET /` | Redirect to `/login` |
-| `GET /login`, `GET /signup` | Login and signup pages |
-| `GET /dashboard` | Dashboard (list documents; requires auth) |
-| `GET /doc/:id` | Document editor (requires auth) |
-| `GET /api/documents` | List documents for current user (auth) |
-| `POST /api/documents` | Create document (auth) |
-| `GET /api/documents/:id` | Get document + role (auth) |
-| `PATCH /api/documents/:id` | Update title (owner only) |
-| `DELETE /api/documents/:id` | Delete document (owner only) |
-| `POST /api/documents/:id/invite` | Invite by email + role (owner only) |
-| `GET /api/audit?limit=N&documentId=uuid` | Recent edit audit (auth; optional filters) |
+| Method | Route | Description | Auth |
+|---|---|---|:---:|
+| `GET` | `/` | Redirects to `/login` | – |
+| `GET` | `/login`, `/signup` | Auth pages | – |
+| `GET` | `/dashboard` | List documents (owned / shared / invited) | ✅ |
+| `GET` | `/doc/:id` | Document editor view | ✅ |
+| `GET` | `/api/documents` | List documents for current user | ✅ |
+| `POST` | `/api/documents` | Create a new document | ✅ |
+| `GET` | `/api/documents/:id` | Get document content + caller's role | ✅ |
+| `PATCH` | `/api/documents/:id` | Update document title | ✅ Owner |
+| `DELETE` | `/api/documents/:id` | Delete document | ✅ Owner |
+| `POST` | `/api/documents/:id/invite` | Invite collaborator by email + role | ✅ Owner |
+| `GET` | `/api/audit?limit=N&documentId=uuid` | Recent audit log entries | ✅ |
 
 ---
 
@@ -167,20 +221,20 @@ Real-time multi-user document collaboration: shared documents, version control, 
 ```
 zzz_document_collab/
 ├── client/
-│   ├── index.html      # Document editor page
-│   ├── dashboard.html  # Document list (owned / shared / invited)
+│   ├── index.html          # Document editor
+│   ├── dashboard.html      # Document list (owned / shared / invited)
 │   ├── login.html
 │   └── signup.html
 ├── server/
-│   ├── index.js        # Express + Socket.io, routes, socket handlers
-│   ├── config.js       # Env config
-│   ├── auth.js         # JWT auth routes & middleware
-│   ├── document.js     # In-memory document store (per docId)
+│   ├── index.js             # Express + Socket.io bootstrap, routes, socket handlers
+│   ├── config.js            # Environment configuration
+│   ├── auth.js               # JWT auth routes & middleware
+│   ├── document.js          # In-memory document store (per docId)
 │   ├── logger.js
 │   └── db/
-│       └── supabase.js # Supabase client & DB helpers
-├── supabase-schema-multi-doc.sql   # Main schema
-├── supabase-step10-migration.sql   # Optional: edit_history.source
+│       └── supabase.js      # Supabase client & DB helpers
+├── supabase-schema-multi-doc.sql   # Core schema
+├── supabase-step10-migration.sql   # Optional: edit_history.source column
 ├── start.js
 ├── package.json
 ├── .env.example
@@ -191,13 +245,15 @@ zzz_document_collab/
 
 ---
 
-## Docs
+## Documentation
 
-- **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** — Supabase SQL to run, env vars, and auth settings.  
-- **[PLAN_10_STEPS.md](./PLAN_10_STEPS.md)** — Phase-by-phase plan (Steps 1–10).  
+| Doc | Purpose |
+|---|---|
+| **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** | Supabase SQL scripts, environment variables, and auth configuration |
+| **[PLAN_10_STEPS.md](./PLAN_10_STEPS.md)** | Phase-by-phase build plan (Steps 1–10) |
 
 ---
 
 ## License
 
-MIT (see `package.json`).
+Released under the **MIT License** — see [`package.json`](./package.json) for details.
